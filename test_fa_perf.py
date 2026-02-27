@@ -17,6 +17,7 @@ import time
 import torch
 import triton
 import flash_attn
+import pytest
 
 # Import benchmark utilities
 from flash_attn.utils.benchmark import benchmark_forward, benchmark_backward
@@ -356,3 +357,52 @@ if __name__ == "__main__":
                         help="Run only a specific config index (0-based). Works with or without --profile")
     args = parser.parse_args()
     main(args)
+
+
+@pytest.mark.parametrize("batch_size, seqlen, nheads, nheads_k, headdim, causal",
+configs)
+def test_correctness(batch_size, seqlen, nheads, nheads_k, headdim, causal, verbose_output=False):
+    results = {}
+    q = torch.randn(batch_size, seqlen, nheads, headdim, device=device, dtype=dtype, requires_grad=True)
+    k = torch.randn(batch_size, seqlen, nheads_k, headdim, device=device, dtype=dtype, requires_grad=True)
+    v = torch.randn(batch_size, seqlen, nheads_k, headdim, device=device, dtype=dtype, requires_grad=True)
+    query_padding_mask = generate_random_padding_mask(seqlen, batch_size, device, mode="random")
+    key_padding_mask = generate_random_padding_mask(seqlen, batch_size, device, mode="random")
+    (
+        q_unpad,
+        k_unpad,
+        v_unpad,
+        cu_seqlens_q,
+        cu_seqlens_k,
+        seqlen,
+        seqlen,
+        q,
+        k,
+        v,
+        output_pad_fn,
+        dq_pad_fn,
+        dk_pad_fn,
+    ) = generate_qkv(q, k, v, query_padding_mask, key_padding_mask, kvpacked=False)
+    if verbose_output:
+        print(f"\n{'='*80}")
+        print(f"Config: batch={batch_size}, seqlen={seqlen}, nheads={nheads}, nheads_k={nheads_k}, "
+              f"headdim={headdim}, causal={causal}")
+        print(f"{'='*80}")
+
+    q_det = q_unpad.clone().detach().requires_grad_(True)
+    k_det = k_unpad.clone().detach().requires_grad_(True)
+    v_det = v_unpad.clone().detach().requires_grad_(True)
+    cu_seqlens_q_det = cu_seqlens_q.clone().detach()
+    cu_seqlens_k_det = cu_seqlens_k.clone().detach()
+    deterministic = True
+
+    y = flash_attn_varlen_func(q_det, k_det, v_det, cu_seqlens_q_det, cu_seqlens_k_det, seqlen, seqlen, causal=causal, deterministic=deterministic)
+    if type(y) is tuple:
+        y = y[0]
+
+    grad = torch.randn_like(y)
+    y.backward(grad, retain_graph=True)
+    dq = q_det.grad.clone()
+    dk = k_det.grad.clone()
+    dv = v_det.grad.clone()
+
