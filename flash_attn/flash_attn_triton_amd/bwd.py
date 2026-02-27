@@ -293,6 +293,30 @@ def get_bwd_configs(autotune: bool):
                     num_stages=1,
                     num_warps=4,
                 ),
+                triton.Config(
+                    {
+                        "BLOCK_M1": 32,
+                        "BLOCK_N1": 256,
+                        "BLOCK_M2": 256,
+                        "BLOCK_N2": 64,
+                        "BLK_SLICE_FACTOR": 2,
+                        "waves_per_eu": 1,
+                    },
+                    num_stages=2,
+                    num_warps=8,
+                ),
+                triton.Config(
+                    {
+                        "BLOCK_M1": 32,
+                        "BLOCK_N1": 256,
+                        "BLOCK_M2": 256,
+                        "BLOCK_N2": 64,
+                        "BLK_SLICE_FACTOR": 2,
+                        "waves_per_eu": 2,
+                    },
+                    num_stages=2,
+                    num_warps=8,
+                ),
             ]
             causal_configs = [
                 triton.Config(
@@ -315,6 +339,30 @@ def get_bwd_configs(autotune: bool):
                         "BLOCK_N2": 64,
                         "BLK_SLICE_FACTOR": 2,
                         "waves_per_eu": 1,
+                    },
+                    num_stages=1,
+                    num_warps=4,
+                ),
+                triton.Config(
+                    {
+                        "BLOCK_M1": 32,
+                        "BLOCK_N1": 128,
+                        "BLOCK_M2": 128,
+                        "BLOCK_N2": 64,
+                        "BLK_SLICE_FACTOR": 2,
+                        "waves_per_eu": 1,
+                    },
+                    num_stages=2,
+                    num_warps=4,
+                ),
+                triton.Config(
+                    {
+                        "BLOCK_M1": 32,
+                        "BLOCK_N1": 128,
+                        "BLOCK_M2": 128,
+                        "BLOCK_N2": 64,
+                        "BLK_SLICE_FACTOR": 2,
+                        "waves_per_eu": 2,
                     },
                     num_stages=1,
                     num_warps=4,
