@@ -2961,6 +2961,36 @@ def _bwd_dq_inner(
     return dq
 
 
+@triton.jit
+def remap_xcd(pid, GRID_MN, NUM_XCDS: tl.constexpr = 8):
+    ## pid remapping on xcds
+    # Number of pids per XCD in the new arrangement
+    pids_per_xcd = (GRID_MN + NUM_XCDS - 1) // NUM_XCDS
+    # When GRID_MN cannot divide NUM_XCDS, some xcds will have
+    # pids_per_xcd pids, the other will have pids_per_xcd - 1 pids.
+    # We calculate the number of xcds that have pids_per_xcd pids as
+    # tall_xcds
+    tall_xcds = GRID_MN % NUM_XCDS
+    tall_xcds = NUM_XCDS if tall_xcds == 0 else tall_xcds
+    # Compute current XCD and local pid within the XCD
+    xcd = pid % NUM_XCDS
+    local_pid = pid // NUM_XCDS
+    # Calculate new pid based on the new grouping
+    # Note that we need to consider the following two cases:
+    # 1. the current pid is on a tall xcd
+    # 2. the current pid is on a short xcd
+    if xcd < tall_xcds:
+        pid = xcd * pids_per_xcd + local_pid
+    else:
+        pid = (
+            tall_xcds * pids_per_xcd
+            + (xcd - tall_xcds) * (pids_per_xcd - 1)
+            + local_pid
+        )
+
+    return pid
+
+
 @triton.autotune(
     configs=causal_autotune_configs,
     key=CAUSAL_AUTOTUNE_KEYS,
@@ -3037,6 +3067,9 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     Descale_q,
     Descale_k,
     Descale_v,
+    NUM_Q_HEADS: tl.constexpr,
+    NUM_K_HEADS: tl.constexpr,
+    BATCH,
     BLOCK_M1: tl.constexpr,
     BLOCK_N1: tl.constexpr,
     BLOCK_M2: tl.constexpr,
@@ -3055,11 +3088,29 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     USE_SEQUSED: tl.constexpr,  # Add flag for seqused
     DEBUG_TRITON: tl.constexpr,
     DEBUG_TRITON_DETAIL: tl.constexpr,
+    NUM_XCD: tl.constexpr = 1,
 ):
-    # program ids
-    hkid = tl.program_id(0)
-    pid = tl.program_id(1)
-    bid = tl.program_id(2)
+    # # program ids
+    # hkid = tl.program_id(0)
+    # pid = tl.program_id(1)
+    # bid = tl.program_id(2)
+
+# grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_M2), batch)
+
+# grid = lambda META: (
+#     nheads_k,
+#     (seqlen + META["BLOCK_N1"] - 1) // META["BLOCK_N1"],
+#     batch,
+# )
+
+    max_seq = max(max_seqlen_q, max_seqlen_k)
+    NUM_K_PIDS = (max_seq + BLOCK_N1 - 1) // BLOCK_N1
+    GROUP_SIZE = NUM_Q_HEADS // NUM_K_HEADS
+    wid = tl.program_id(0)
+    hkid = wid % NUM_K_HEADS
+    pid = (wid // NUM_K_HEADS) % NUM_K_PIDS
+    bid = (wid // (NUM_K_PIDS * NUM_K_HEADS)) % BATCH
+
     if DEBUG_TRITON:
         print(f"\npid: {pid}, bid: {bid}, hkid: {hkid}")  # noqa: E701
     # figure out varlen start and end
@@ -3095,7 +3146,7 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     PADDED_HEAD_V: tl.constexpr = ACTUAL_HEAD_DIM_V != HEAD_DIM_V
     offs_d_qk = tl.arange(0, HEAD_DIM_QK)
     offs_d_v = tl.arange(0, HEAD_DIM_V)
-    GROUP_SIZE: tl.constexpr = HQ // HK
+    # GROUP_SIZE: tl.constexpr = HQ // HK
 
     # align the delta_qk
     start_n = pid * BLOCK_N1
@@ -4310,12 +4361,13 @@ def attention_backward_triton_impl(
     # Choose which kernels to call based on mode
     if mode == "fused":
         seqlen = max(max_seqlen_q, max_seqlen_k)
-        grid = lambda META: (
-            nheads_k,
-            (seqlen + META["BLOCK_N1"] - 1) // META["BLOCK_N1"],
-            batch,
-        )
         if causal:
+            grid = lambda META: (
+                nheads_k * 
+                ((seqlen + META["BLOCK_N1"] - 1) // META["BLOCK_N1"]) *
+                batch,
+            )
+
             if DEBUG_TRITON:
                 print(f"bwd_kernel: grid = {grid}")  # noqa: E701
             bwd_kernel_fused_causal[grid](
@@ -4388,6 +4440,9 @@ def attention_backward_triton_impl(
                 descale_q,
                 descale_k,
                 descale_v,
+                nheads_q,
+                nheads_k,
+                batch,
                 HEAD_DIM_QK=HEAD_DIM_QK,
                 HEAD_DIM_V=HEAD_DIM_V,
                 ACTUAL_HEAD_DIM_QK=ACTUAL_HEAD_DIM_QK,
@@ -4405,6 +4460,12 @@ def attention_backward_triton_impl(
                 DEBUG_TRITON_DETAIL=DEBUG_TRITON_DETAIL,
             )
         else:
+            grid = lambda META: (
+                nheads_k,
+                (seqlen + META["BLOCK_N1"] - 1) // META["BLOCK_N1"],
+                batch,
+            )
+
             bwd_kernel_fused_noncausal[grid](
                 q,
                 k,
