@@ -3051,8 +3051,8 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     stride_descale_v_z,
     stride_az,
     stride_ah,
-    HQ,
-    HK,
+    HQ : tl.constexpr,
+    HK : tl.constexpr,
     cu_seqlens_q,
     cu_seqlens_k,
     seqused_q,
@@ -3067,8 +3067,6 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     Descale_q,
     Descale_k,
     Descale_v,
-    NUM_Q_HEADS: tl.constexpr,
-    NUM_K_HEADS: tl.constexpr,
     BATCH,
     BLOCK_M1: tl.constexpr,
     BLOCK_N1: tl.constexpr,
@@ -3090,10 +3088,10 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     DEBUG_TRITON_DETAIL: tl.constexpr,
     NUM_XCD: tl.constexpr = 1,
 ):
-    # # program ids
-    # hkid = tl.program_id(0)
-    # pid = tl.program_id(1)
-    # bid = tl.program_id(2)
+    # program ids
+    hkid = tl.program_id(0)
+    pid = tl.program_id(1)
+    bid = tl.program_id(2)
 
 # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_M2), batch)
 
@@ -3103,13 +3101,15 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
 #     batch,
 # )
 
-    max_seq = max(max_seqlen_q, max_seqlen_k)
-    NUM_K_PIDS = (max_seq + BLOCK_N1 - 1) // BLOCK_N1
-    GROUP_SIZE = NUM_Q_HEADS // NUM_K_HEADS
-    wid = tl.program_id(0)
-    hkid = wid % NUM_K_HEADS
-    pid = (wid // NUM_K_HEADS) % NUM_K_PIDS
-    bid = (wid // (NUM_K_PIDS * NUM_K_HEADS)) % BATCH
+    # max_seq = max(max_seqlen_q, max_seqlen_k)
+    # NUM_K_PIDS = (max_seq + BLOCK_N1 - 1) // BLOCK_N1
+    # wid = tl.program_id(0)
+    # hkid = wid % HK
+    # # hkid = remap_xcd(hkid, NUM_K_HEADS, NUM_XCD)
+    # # hkid = (hkid * 29) % NUM_K_HEADS
+
+    # pid = (wid // HK) % NUM_K_PIDS
+    # bid = (wid // (NUM_K_PIDS * HK)) % BATCH
 
     if DEBUG_TRITON:
         print(f"\npid: {pid}, bid: {bid}, hkid: {hkid}")  # noqa: E701
@@ -3146,8 +3146,7 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     PADDED_HEAD_V: tl.constexpr = ACTUAL_HEAD_DIM_V != HEAD_DIM_V
     offs_d_qk = tl.arange(0, HEAD_DIM_QK)
     offs_d_v = tl.arange(0, HEAD_DIM_V)
-    # GROUP_SIZE: tl.constexpr = HQ // HK
-
+    GROUP_SIZE = HQ // HK
     # align the delta_qk
     start_n = pid * BLOCK_N1
     if start_n < seqlen_k:
@@ -3651,8 +3650,8 @@ def bwd_kernel_fused_noncausal(
     stride_descale_v_z,
     stride_az,
     stride_ah,
-    HQ,
-    HK,
+    HQ : tl.constexpr,
+    HK : tl.constexpr,
     cu_seqlens_q,
     cu_seqlens_k,
     seqused_q,
@@ -4362,10 +4361,16 @@ def attention_backward_triton_impl(
     if mode == "fused":
         seqlen = max(max_seqlen_q, max_seqlen_k)
         if causal:
+            # grid = lambda META: (
+            #     nheads_k * 
+            #     ((seqlen + META["BLOCK_N1"] - 1) // META["BLOCK_N1"]) *
+            #     batch,
+            # )
+
             grid = lambda META: (
-                nheads_k * 
-                ((seqlen + META["BLOCK_N1"] - 1) // META["BLOCK_N1"]) *
-                batch,
+                nheads_k,
+                ((seqlen + META["BLOCK_N1"] - 1) // META["BLOCK_N1"]),
+                batch
             )
 
             if DEBUG_TRITON:
@@ -4440,8 +4445,6 @@ def attention_backward_triton_impl(
                 descale_q,
                 descale_k,
                 descale_v,
-                nheads_q,
-                nheads_k,
                 batch,
                 HEAD_DIM_QK=HEAD_DIM_QK,
                 HEAD_DIM_V=HEAD_DIM_V,
