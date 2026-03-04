@@ -77,7 +77,7 @@ def get_fwd_decode_configs(autotune: bool):
             )
 
     # ===================== Autotune Sweep =====================
-    arch = get_arch()
+    # arch = get_arch()
     splitk_configs = []
     
     BLOCK_M_OPTIONS = [64, 32, 16]

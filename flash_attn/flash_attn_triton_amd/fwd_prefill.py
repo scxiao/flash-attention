@@ -58,9 +58,29 @@ def get_fwd_prefill_configs(autotune: bool):
                         "waves_per_eu": 2,
                         "PRE_LOAD_V": False,
                     },
+                    num_stages=1,
+                    num_warps=2,
+                ),
+                triton.Config(
+                    {
+                        "BLOCK_M": 128,
+                        "BLOCK_N": 64,
+                        "waves_per_eu": 2,
+                        "PRE_LOAD_V": False,
+                    },
                     num_stages=2,
                     num_warps=4,
-                )
+                ),
+                triton.Config(
+                    {
+                        "BLOCK_M": 128,
+                        "BLOCK_N": 128,
+                        "waves_per_eu": 2,
+                        "PRE_LOAD_V": False,
+                    },
+                    num_stages=2,
+                    num_warps=4,
+                ),
             ]
         elif arch.name == "gfx942":
             if arch.cu_count < 304:
