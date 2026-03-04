@@ -359,10 +359,23 @@ if __name__ == "__main__":
     main(args)
 
 
+def output_file_names(batch_size, causal):
+    output_file = f"output/batch_{batch_size}_causal_{causal}"
+
+    fwd_file = f"{output_file}_fwd_outputs.pt"
+    bwd_file = f"{output_file}_bwd_outputs.pt"
+
+    return fwd_file, bwd_file
+
+
+# unit test to verify kernel change correctness
+#save output flag
+pytest_save_output = False
+
 @pytest.mark.parametrize("batch_size, seqlen, nheads, nheads_k, headdim, causal",
 configs)
 def test_correctness(batch_size, seqlen, nheads, nheads_k, headdim, causal, verbose_output=False):
-    results = {}
+    torch.manual_seed(1)
     q = torch.randn(batch_size, seqlen, nheads, headdim, device=device, dtype=dtype, requires_grad=True)
     k = torch.randn(batch_size, seqlen, nheads_k, headdim, device=device, dtype=dtype, requires_grad=True)
     v = torch.randn(batch_size, seqlen, nheads_k, headdim, device=device, dtype=dtype, requires_grad=True)
@@ -396,9 +409,20 @@ def test_correctness(batch_size, seqlen, nheads, nheads_k, headdim, causal, verb
     cu_seqlens_k_det = cu_seqlens_k.clone().detach()
     deterministic = True
 
+    fwd_out_name, bwd_out_name = output_file_names(batch_size, causal)
+    if pytest_save_output:
+        if not os.path.isdir(os.path.dirname(fwd_out_name)):
+            os.makedirs(os.path.dirname(fwd_out_name))
+
     y = flash_attn_varlen_func(q_det, k_det, v_det, cu_seqlens_q_det, cu_seqlens_k_det, seqlen, seqlen, causal=causal, deterministic=deterministic)
     if type(y) is tuple:
         y = y[0]
+
+    if pytest_save_output:
+        torch.save(y, fwd_out_name)
+    else:
+        y_ref = torch.load(fwd_out_name)
+        torch.testing.assert_close(y, y_ref, atol=1e-4, rtol=0) 
 
     grad = torch.randn_like(y)
     y.backward(grad, retain_graph=True)
@@ -406,3 +430,17 @@ def test_correctness(batch_size, seqlen, nheads, nheads_k, headdim, causal, verb
     dk = k_det.grad.clone()
     dv = v_det.grad.clone()
 
+    if pytest_save_output:
+        # save bwd outputs
+        torch.save({"dq": dq, 
+                    "dk": dk, 
+                    "dv": dv}, 
+                    bwd_out_name)
+    else:
+        ref_outpus = torch.load(bwd_out_name)
+        dq_ref = ref_outpus["dq"]
+        dk_ref = ref_outpus["dk"]
+        dv_ref = ref_outpus["dv"]
+        torch.testing.assert_close(dq, dq_ref, atol=1e-5, rtol=0.015)
+        torch.testing.assert_close(dk, dk_ref, atol=1e-5, rtol=0.015)
+        torch.testing.assert_close(dv, dv_ref, atol=1e-5, rtol=0.015)        
