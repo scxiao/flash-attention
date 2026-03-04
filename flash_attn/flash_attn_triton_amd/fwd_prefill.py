@@ -731,6 +731,36 @@ def compute_block_masking(
         )
 
 
+@triton.jit
+def remap_xcd(pid, GRID_MN, NUM_XCDS: tl.constexpr = 8):
+    ## pid remapping on xcds
+    # Number of pids per XCD in the new arrangement
+    pids_per_xcd = (GRID_MN + NUM_XCDS - 1) // NUM_XCDS
+    # When GRID_MN cannot divide NUM_XCDS, some xcds will have
+    # pids_per_xcd pids, the other will have pids_per_xcd - 1 pids.
+    # We calculate the number of xcds that have pids_per_xcd pids as
+    # tall_xcds
+    tall_xcds = GRID_MN % NUM_XCDS
+    tall_xcds = NUM_XCDS if tall_xcds == 0 else tall_xcds
+    # Compute current XCD and local pid within the XCD
+    xcd = pid % NUM_XCDS
+    local_pid = pid // NUM_XCDS
+    # Calculate new pid based on the new grouping
+    # Note that we need to consider the following two cases:
+    # 1. the current pid is on a tall xcd
+    # 2. the current pid is on a short xcd
+    if xcd < tall_xcds:
+        pid = xcd * pids_per_xcd + local_pid
+    else:
+        pid = (
+            tall_xcds * pids_per_xcd
+            + (xcd - tall_xcds) * (pids_per_xcd - 1)
+            + local_pid
+        )
+
+    return pid
+
+
 @triton.autotune(
     configs=fwd_prefill_autotune_configs,
     key=FWD_PREFILL_AUTOTUNE_KEYS,
@@ -820,9 +850,10 @@ def attn_fwd(
     ACCUMULATOR_TYPE = tl.float32
 
     # compute offsets
-    off_z = tl.program_id(0)
-    off_h_q = tl.program_id(1)
-    start_m = tl.program_id(2)
+    off_h_q = tl.program_id(0)
+    off_h_q = remap_xcd(off_h_q, HQ)
+    start_m = tl.program_id(1)
+    off_z = tl.program_id(2)
     # If MQA / GQA, set the K and V head offsets appropriately.
     GROUP_SIZE: tl.constexpr = HQ // HK
     if GROUP_SIZE != 1:
@@ -1668,7 +1699,9 @@ def attention_forward_prefill_triton_impl(
     force_masking = arch.is_rdna
 
     # launch kernel
-    grid = lambda META: (batch, nheads_q, triton.cdiv(max_seqlens_q, META["BLOCK_M"]))
+    # grid = lambda META: (batch, nheads_q, triton.cdiv(max_seqlens_q, META["BLOCK_M"]))
+    grid = lambda META: (nheads_q, triton.cdiv(max_seqlens_q, META["BLOCK_M"]), batch)
+
     attn_fwd[grid](
         q,
         k,
