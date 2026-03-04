@@ -364,7 +364,7 @@ def get_bwd_configs(autotune: bool):
                         "BLK_SLICE_FACTOR": 2,
                         "waves_per_eu": 2,
                     },
-                    num_stages=1,
+                    num_stages=2,
                     num_warps=4,
                 ),
             ]
