@@ -3038,7 +3038,6 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     Descale_q,
     Descale_k,
     Descale_v,
-    BATCH : tl.constexpr,
     BLOCK_M1: tl.constexpr,
     BLOCK_N1: tl.constexpr,
     BLOCK_M2: tl.constexpr,
@@ -3622,7 +3621,6 @@ def bwd_kernel_fused_noncausal(
     Descale_q,
     Descale_k,
     Descale_v,
-    BATCH : tl.constexpr,
     BLOCK_M1: tl.constexpr,  # 32
     BLOCK_N1: tl.constexpr,  # 128
     BLOCK_M2: tl.constexpr,  # 128
@@ -4402,7 +4400,6 @@ def attention_backward_triton_impl(
                 descale_q,
                 descale_k,
                 descale_v,
-                batch,
                 HEAD_DIM_QK=HEAD_DIM_QK,
                 HEAD_DIM_V=HEAD_DIM_V,
                 ACTUAL_HEAD_DIM_QK=ACTUAL_HEAD_DIM_QK,
@@ -4491,7 +4488,6 @@ def attention_backward_triton_impl(
                 descale_q,
                 descale_k,
                 descale_v,
-                batch,
                 HEAD_DIM_QK=HEAD_DIM_QK,
                 HEAD_DIM_V=HEAD_DIM_V,
                 ACTUAL_HEAD_DIM_QK=ACTUAL_HEAD_DIM_QK,

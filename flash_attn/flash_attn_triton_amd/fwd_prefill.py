@@ -846,6 +846,7 @@ def attn_fwd(
     FP8_P_DESCALE: tl.constexpr,
     USE_SEQUSED: tl.constexpr,
     FORCE_MASKING: tl.constexpr,
+    NUM_XCD: tl.constexpr = 1,
 ):
     # set params
     ACCUMULATOR_TYPE = tl.float32
@@ -853,7 +854,7 @@ def attn_fwd(
     # compute offsets
     off_h_q = tl.program_id(0)
     # apply the xcd remapping for the hq dim
-    off_h_q = remap_xcd(off_h_q, HQ)
+    off_h_q = remap_xcd(off_h_q, NUM_XCD)
 
     start_m = tl.program_id(1)
     off_z = tl.program_id(2)
@@ -1780,4 +1781,5 @@ def attention_forward_prefill_triton_impl(
         FP8_P_DESCALE=False,
         USE_SEQUSED=(seqused_q is not None or seqused_k is not None),
         FORCE_MASKING=force_masking,
+        NUM_XCD=8,
     )
