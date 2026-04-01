@@ -191,10 +191,10 @@ repeats = 30
 # Benchmark configurations
 #            b,  sq,   h,  h_k, d, causal
 configs = [
-            (2, 16384,  32, 32, 64,  False),
+            # (2, 16384,  32, 32, 64,  False),
             (2, 16384,  32, 32, 64,  True),
-            (2, 16384,  32, 4, 64,  False),
-            (2, 16384,  32, 4, 64,  True),
+            # (2, 16384,  32, 4, 64,  False),
+            # (2, 16384,  32, 4, 64,  True),
 ]
 # Output directories
 cwd = os.getcwd()

@@ -320,42 +320,42 @@ def get_bwd_configs(autotune: bool):
                 ),
             ]
             causal_configs = [
-                triton.Config(
-                    {
-                        "BLOCK_M1": 32,
-                        "BLOCK_N1": 128,
-                        "BLOCK_M2": 128,
-                        "BLOCK_N2": 64,
-                        "BLK_SLICE_FACTOR": 2,
-                        "waves_per_eu": 1,
-                    },
-                    num_stages=1,
-                    num_warps=4,
-                ),
-                triton.Config(
-                    {
-                        "BLOCK_M1": 64,
-                        "BLOCK_N1": 64,
-                        "BLOCK_M2": 64,
-                        "BLOCK_N2": 64,
-                        "BLK_SLICE_FACTOR": 2,
-                        "waves_per_eu": 1,
-                    },
-                    num_stages=1,
-                    num_warps=4,
-                ),
-                triton.Config(
-                    {
-                        "BLOCK_M1": 32,
-                        "BLOCK_N1": 128,
-                        "BLOCK_M2": 128,
-                        "BLOCK_N2": 64,
-                        "BLK_SLICE_FACTOR": 2,
-                        "waves_per_eu": 1,
-                    },
-                    num_stages=2,
-                    num_warps=4,
-                ),
+                # triton.Config(
+                #     {
+                #         "BLOCK_M1": 32,
+                #         "BLOCK_N1": 128,
+                #         "BLOCK_M2": 128,
+                #         "BLOCK_N2": 64,
+                #         "BLK_SLICE_FACTOR": 2,
+                #         "waves_per_eu": 1,
+                #     },
+                #     num_stages=1,
+                #     num_warps=4,
+                # ),
+                # triton.Config(
+                #     {
+                #         "BLOCK_M1": 64,
+                #         "BLOCK_N1": 64,
+                #         "BLOCK_M2": 64,
+                #         "BLOCK_N2": 64,
+                #         "BLK_SLICE_FACTOR": 2,
+                #         "waves_per_eu": 1,
+                #     },
+                #     num_stages=1,
+                #     num_warps=4,
+                # ),
+                # triton.Config(
+                #     {
+                #         "BLOCK_M1": 32,
+                #         "BLOCK_N1": 128,
+                #         "BLOCK_M2": 128,
+                #         "BLOCK_N2": 64,
+                #         "BLK_SLICE_FACTOR": 2,
+                #         "waves_per_eu": 1,
+                #     },
+                #     num_stages=2,
+                #     num_warps=4,
+                # ),
                 triton.Config(
                     {
                         "BLOCK_M1": 32,
@@ -3022,6 +3022,8 @@ def bwd_kernel_fused_causal(  # grid = (nheads_k, tl.cdiv(max_seqlen_q // BLOCK_
     stride_descale_v_z,
     stride_az,
     stride_ah,
+    # HQ,
+    # HK,
     HQ : tl.constexpr,
     HK : tl.constexpr,
     cu_seqlens_q,
